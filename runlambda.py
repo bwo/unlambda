@@ -4,63 +4,64 @@ class Currentchar:
     def __init__(self):
         self.c = ''
 curr = Currentchar()
-curr.c = ''
 
 class Op(object):
     def __init__(self):
         pass
-class Tick(Op): #annoying
+class Tick(Op):
+    '''
+A graceless hack so that the stack in bt() is homogenous.
+'''
     pass
 class I(Op):
-    def __call__(self, a, c):
+    def app(self, a, c):
         return (c,a)
 class K(Op):
-    def __call__(self, a, c):
+    def app(self, a, c):
         return (c, K2(a))
 class K2(Op):
     def __init__(self, r):
         self.r = r
-    def __call__(self, _, c):
+    def app(self, _, c):
         return (c, self.r)
 class S(Op):
-    def __call__(self, a, c):
+    def app(self, a, c):
         return (c, S2(a))
 class S2(Op):
     def __init__(self, first):
         self.first = first
-    def __call__(self, a, c):
+    def app(self, a, c):
         return (c, S3(self.first, a))
 class S3(Op):
     def __init__(self, first, second):
         self.f = first
         self.s = second
-    def __call__(self, a, c):
-        return (Cont(), P(c,App(App(self.f,a),App(self.s,a))))
+    def app(self, a, c):
+        return (descend, P(c,App(App(self.f,a),App(self.s,a))))
 class V(Op):
-    def __call__(self, _, c):
+    def app(self, _, c):
         return (c, self)
 class E(Op):
-    def __call__(self, a, c):
+    def app(self, a, c):
         raise SystemExit(not isinstance(a, I))
         return (c, a)
 class D(Op):
-    pass
-        
+    def app(self, a, c):
+        assert False, "This never happens"        
 class D2(Op):
     def __init__(self, right):
         self.right = right
-    def __call__(self, rv, k2):
-        return (Cont(), P(D_delayed(rv, k2), self.right))
-
+    def app(self, rv, k2):
+        return (descend, P(D_delayed(rv, k2), self.right))
 class Readchar(Op):
-    def __call__(self, a, c):
+    def app(self, a, c):
         curr.c = os.read(0,1)
-        if not curr.c: return (Cont(), P(c, App(a,V())))
-        return (Cont(), P(c, App(a,I())))
+        if not curr.c: return (descend, P(c, App(a,v)))
+        return (descend, P(c, App(a,i)))
 class Printchar(I):
     def __init__(self, char):
         self.char = char or ''# convince pypy translation that this is never None
-    def __call__(self, a, c):
+    def app(self, a, c):
         os.write(1, self.char)
         return (c,a)
 class R(Printchar):
@@ -69,38 +70,55 @@ class R(Printchar):
 class Compchar(Op):
     def __init__(self, char):
         self.char = char
-    def __call__(self, a, c):
+    def app(self, a, c):
         if self.char == curr.c:
-            return (Cont(), P(c, App(a,I())))
-        return (Cont(), P(c, App(a,V())))
+            return (descend, P(c, App(a,i)))
+        return (descend, P(c, App(a,V())))
 class Reprint(Op):
-    def __call__(self, a, c):
-        if not curr.c: return (Cont(), P(c,App(a,V())))
-        return (Cont(), P(c,App(a, Printchar(curr.c))))
+    def app(self, a, c):
+        if not curr.c: return (descend, P(c,App(a,v)))
+        return (descend, P(c,App(a, Printchar(curr.c))))
 class C(Op):
-    def __call__(self, a, c):
-        return (Cont(), P(c,App(a, Callcc(c))))
+    def app(self, a, c):
+        return (descend, P(c,App(a, Callcc(c))))
 class Callcc(Op):
     def __init__(self, cont):
         self.cont = cont
-    def __call__(self, a, _):
+    def app(self, a, _):
         return (self.cont, a)
+
+i = I()
+v = V()
+def get_pchar(c):
+    if c not in pcharmap:
+        pcharmap[c] = Printchar(c)
+    return pcharmap[c]
+pcharmap = {}
+def get_cchar(c):
+    if c not in ccharmap:
+        ccharmap[c] = Compchar(c)
+    return ccharmap[c]
+ccharmap = {}
+
 class App(Op):
     def __init__(self, left, right):
         self.left = left
         self.right = right
-class P(Op): # also annoying
+
+
+class P(Op):
+    '''
+A graceless convenience so that instances of Eval (but not of its subclasses!) see a single argument of type Op. (The subclasses also see a single argument of type Op, but they do so without this blatant hackery.)
+'''
     def __init__(self, cont, tree):
         self.cont = cont
         self.tree = tree
-noarg_ = {'i':I, 'v':V, 'e':E, 'd':D, 's':S, 'k':K, '|':Reprint, 'r':R,
-         '@':Readchar, 'c':C}
-takesarg = {'.':Printchar, '?':Compchar}
+
+noarg = {'i':i, 'v':v, 'e':E(), 'd':D(), 's':S(), 'k':K(),
+         '|':Reprint(), 'r':R(), '@':Readchar(), 'c':C()}
+takesarg = {'.':get_pchar, '?':get_cchar}
 
 def bt(fileno):
-    noarg = {}
-    for n in noarg_.keys():
-        noarg[n] = noarg_[n]()
     tree, stack, ticks, tot = [], [], 0, 0
     while tot != 2*ticks + 1:
         cur = os.read(fileno,1).lower()
@@ -130,54 +148,55 @@ def bt(fileno):
             tree.append(item)
     return tree[0]
 
-class Cont(object):
+class Eval(object):
     def __init__(self):
         pass
-    def __call__(self, p):
+    def evaluate(self, p):
         tree = p.tree
         cont = p.cont
         if isinstance(tree, App):
             dchecker = Dchecker(tree.right, cont)
             return (self, P(dchecker, tree.left))
         else:
-            return cont.__call__(tree)
+            return cont.evaluate(tree)
 
-class Exiter(Cont):
-    def __call__(self, o):
+class Exiter(Eval):
+    def evaluate(self, o):
         raise SystemExit(not isinstance(o, I))
 
-class Dchecker(Cont):
+class Dchecker(Eval):
     def __init__(self, right, cont):
         self.right = right
         self.cont = cont
-    def __call__(self, lval):
+    def evaluate(self, lval):
         if isinstance(lval, D):
-            return self.cont.__call__(D2(self.right))
+            return self.cont.evaluate(D2(self.right))
         else:
-            return (Cont(), P(D_undelayed(lval, self.cont), self.right))
+            return (descend, P(D_undelayed(lval, self.cont), self.right))
 
-class D_delayed(Cont):
+class D_delayed(Eval):
     def __init__(self, rv, k2):
         self.rv = rv
         self.k2 = k2
-    def __call__(self, lv):
-        return lv.__call__(self.rv, self.k2)
+    def evaluate(self, lv):
+        return lv.app(self.rv, self.k2)
     
-class D_undelayed(Cont):
+class D_undelayed(Eval):
     def __init__(self, lval, cont):
         self.lval = lval
         self.cont = cont
-    def __call__(self, rval):
-        return self.lval.__call__(rval, self.cont)
-    
+    def evaluate(self, rval):
+        return self.lval.app(rval, self.cont)
+
+descend = Eval()
+
 def run(argv):
     if len(argv) == 1: fileno = 0
     else: fileno = os.open(argv[1], os.O_RDONLY, 0777)
     tree = bt(fileno)
-    descend = Cont()
-    k_, a = descend, P(Exiter(), tree)
-    while not isinstance(k_, Exiter):
-        k_, a = k_.__call__(a)
+    k, a = descend, P(Exiter(), tree)
+    while not isinstance(k, Exiter):
+        k, a = k.evaluate(a)
     if isinstance(a, I): return 0
     return 1
 
