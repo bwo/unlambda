@@ -18,9 +18,8 @@ v = lambda _,c: (c,v)
 c = lambda a, k: (descend, ((a, lambda a2, _: (k, a2)),k))
 e = lambda a,_: sys.exit(a != i)
 
-## d is a special form; it is occasionally applied, but its argument
-## is already evaluated if it is (provided we are careful never to
-## invoke an argument directly---see e.g. def'n of s above.)
+## d is a special form; it is never applied (provided we are careful
+## never to invoke an argument directly---see e.g. def'n of s above.)
 def d(a,c):
     assert False, "This should never happen."
 
