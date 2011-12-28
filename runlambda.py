@@ -73,7 +73,7 @@ class Compchar(Op):
     def app(self, a, c):
         if self.char == curr.c:
             return (descend, P(c, App(a,i)))
-        return (descend, P(c, App(a,V())))
+        return (descend, P(c, App(a,v)))
 class Reprint(Op):
     def app(self, a, c):
         if not curr.c: return (descend, P(c,App(a,v)))
