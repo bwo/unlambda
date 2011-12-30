@@ -3,3 +3,6 @@ syntax: glob
 *.pyc
 #*#
 runlambda-c
+unlambda
+*.hi
+*.o
