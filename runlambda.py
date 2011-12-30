@@ -37,7 +37,7 @@ class S3(Op):
         self.f = first
         self.s = second
     def app(self, a, c):
-        return (descend, P(c,App(App(self.f,a),App(self.s,a))))
+        return descend(c, App(App(self.f,a),App(self.s,a)))
 class V(Op):
     def app(self, _, c):
         return (c, self)
@@ -52,12 +52,12 @@ class D2(Op):
     def __init__(self, right):
         self.right = right
     def app(self, rv, k2):
-        return (descend, P(D_delayed(rv, k2), self.right))
+        return descend(D_delayed(rv, k2), self.right)
 class Readchar(Op):
     def app(self, a, c):
         curr.c = os.read(0,1)
-        if not curr.c: return (descend, P(c, App(a,v)))
-        return (descend, P(c, App(a,i)))
+        if not curr.c: return descend(c, App(a,v))
+        return descend(c,App(a,i))
 class Printchar(I):
     def __init__(self, char):
         self.char = char or ''# convince pypy translation that this is never None
@@ -72,15 +72,15 @@ class Compchar(Op):
         self.char = char
     def app(self, a, c):
         if self.char == curr.c:
-            return (descend, P(c, App(a,i)))
-        return (descend, P(c, App(a,v)))
+            return descend(c, App(a,i))
+        return descend(c, App(a,v))
 class Reprint(Op):
     def app(self, a, c):
-        if not curr.c: return (descend, P(c,App(a,v)))
-        return (descend, P(c,App(a, Printchar(curr.c))))
+        if not curr.c: return descend(c,App(a,v))
+        return descend(c,App(a, Printchar(curr.c)))
 class C(Op):
     def app(self, a, c):
-        return (descend, P(c,App(a, Callcc(c))))
+        return descend(c,App(a, Callcc(c)))
 class Callcc(Op):
     def __init__(self, cont):
         self.cont = cont
@@ -106,13 +106,6 @@ class App(Op):
         self.right = right
 
 
-class P(Op):
-    '''
-A graceless convenience so that instances of Eval (but not of its subclasses!) see a single argument of type Op. (The subclasses also see a single argument of type Op, but they do so without this blatant hackery.)
-'''
-    def __init__(self, cont, tree):
-        self.cont = cont
-        self.tree = tree
 
 noarg = {'i':i, 'v':v, 'e':E(), 'd':D(), 's':S(), 'k':K(),
          '|':Reprint(), 'r':R(), '@':Readchar(), 'c':C()}
@@ -148,17 +141,15 @@ def bt(fileno):
             tree.append(item)
     return tree[0]
 
+def descend(cont, tree):
+    if isinstance(tree, App):
+        dchecker = Dchecker(tree.right,cont)
+        return descend(dchecker, tree.left)
+    return cont.evaluate(tree)
+
 class Eval(object):
     def __init__(self):
         pass
-    def evaluate(self, p):
-        tree = p.tree
-        cont = p.cont
-        if isinstance(tree, App):
-            dchecker = Dchecker(tree.right, cont)
-            return (self, P(dchecker, tree.left))
-        else:
-            return cont.evaluate(tree)
 
 class Exiter(Eval):
     def evaluate(self, o):
@@ -172,7 +163,7 @@ class Dchecker(Eval):
         if isinstance(lval, D):
             return self.cont.evaluate(D2(self.right))
         else:
-            return (descend, P(D_undelayed(lval, self.cont), self.right))
+            return descend(D_undelayed(lval, self.cont), self.right)
 
 class D_delayed(Eval):
     def __init__(self, rv, k2):
@@ -188,13 +179,11 @@ class D_undelayed(Eval):
     def evaluate(self, rval):
         return self.lval.app(rval, self.cont)
 
-descend = Eval()
-
 def run(argv):
     if len(argv) == 1: fileno = 0
     else: fileno = os.open(argv[1], os.O_RDONLY, 0777)
     tree = bt(fileno)
-    k, a = descend, P(Exiter(), tree)
+    k, a = descend(Exiter(), tree)
     while not isinstance(k, Exiter):
         k, a = k.evaluate(a)
     if isinstance(a, I): return 0
