@@ -40,9 +40,7 @@ app Readchar a c = do
   curchar <- liftIO maybeChar
   put curchar
   descend c (App a $ maybe V (const I) curchar)
-app (Printchar char) a c = do
-  liftIO (putChar char)
-  return (c,a)
+app (Printchar char) a c = liftIO (putChar char) >> return (c,a)
 app (Compchar char) a c = do
   cchar <- get
   let eq = fromMaybe False ((==) <$> cchar <*> Just char)
@@ -63,9 +61,11 @@ eval (D_undelayed lv cont) rv = app lv rv cont
 eval (Dcheck right cont) D = eval cont (D2 right)
 eval (Dcheck right cont) lv = descend (D_undelayed lv cont) right
 
+descend :: Cont -> Term -> EvalState (Cont, Term)
 descend cont (App left right) = descend (Dcheck right cont) left
 descend cont tree = eval cont tree
 
+run :: Term -> IO ()
 run tree = run' start Nothing
     where 
       start = descend Exiter tree
@@ -109,5 +109,5 @@ main = do
   tree <- fmap Just (build handle) `catchEOF`
           (\_ -> putStrLn "Error: input too short" >> return Nothing)
   case tree of 
-    (Just t) -> run t >> return ()
+    Just t -> run t
     Nothing -> return ()
