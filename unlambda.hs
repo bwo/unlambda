@@ -1,4 +1,3 @@
-module Unlambda (run, hBuild, build) where
 import System.IO
 import System
 import Control.Monad
