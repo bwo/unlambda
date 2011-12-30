@@ -1,6 +1,5 @@
-{-# LANGUAGE ScopedTypeVariables #-}
+module Unlambda (run, hBuild, build) where
 import System.IO
-import Prelude hiding (catch)
 import System
 import Control.Monad
 import Control.Applicative
@@ -8,7 +7,6 @@ import Data.Maybe
 import Control.Monad.State
 import Control.Exception (catchJust)
 import System.IO.Error
-import Debug.Trace
 
 type EvalState = StateT (Maybe Char) IO
 
@@ -17,8 +15,8 @@ data Term = I | K | K2 Term | S | S2 Term | S3 Term Term | V | E
           | C | Callcc Cont | App Term Term 
             deriving (Eq, Show)
 
-data Cont = Exiter | Dcheck Term Cont |
-          D_delayed Term Cont | D_undelayed Term Cont
+data Cont = Exiter | Dcheck Term Cont | D_delayed Term Cont 
+          | D_undelayed Term Cont
               deriving (Eq, Show)
 
 catchEOF = catchJust (guard.isEOFError)
@@ -72,41 +70,60 @@ run tree = run' start Nothing
       e' = uncurry eval
       run' start state = runStateT start state >>= \(r,n) -> run' (e' r) n
 
-build :: Handle -> IO Term
-build h = do 
+hBuild :: Handle -> IO Term
+hBuild h = do 
   c <- hGetChar h
   case c of 
-    '#' -> hGetLine h >> build h
+    '#' -> hGetLine h >> hBuild h
     '`' -> do
-            left <- build h
-            right <- build h
+            left <- hBuild h
+            right <- hBuild h
             return $ App left right
     _ | takesone c -> return $ buildone c
       | takestwo c ->  do
             arg <- hGetChar h
             return $ buildtwo c arg
-      | otherwise -> build h
-      where
-        buildone 'i' = I
-        buildone 'v' = V
-        buildone 'c' = C
-        buildone 'e' = E
-        buildone 'd' = D
-        buildone 's' = S
-        buildone 'k' = K
-        buildone '|' = Reprint
-        buildone 'r' = Printchar '\n'
-        buildone '@' = Readchar
-        buildtwo '.' c = Printchar c
-        buildtwo '?' c = Compchar c
-        takesone = flip elem "ivcedsk|r@"
-        takestwo = flip elem ".?"
+      | otherwise -> hBuild h
+
+build :: String -> Maybe Term
+build = maybe Nothing (Just . fst) . build'
+    where
+      build' :: String -> Maybe (Term, String)
+      build' [] = Nothing
+      build' (c:cs)
+          | c == '`' = do
+              (left, cs') <- build' cs
+              (right, rest) <- build' cs'
+              return ((App left right), rest)
+          | c == '#' = case snd $ break (=='\n') cs of
+                         "" -> Nothing
+                         rst -> build' $ tail rst
+          | takesone c = Just (buildone c, cs)
+          | takestwo c = case cs of
+                           (arg:rest) -> Just (buildtwo c arg, rest)
+                           [] -> Nothing
+          | otherwise = build' cs
+
+buildone 'i' = I
+buildone 'v' = V
+buildone 'c' = C
+buildone 'e' = E
+buildone 'd' = D
+buildone 's' = S
+buildone 'k' = K
+buildone '|' = Reprint
+buildone 'r' = Printchar '\n'
+buildone '@' = Readchar
+buildtwo '.' c = Printchar c
+buildtwo '?' c = Compchar c
+takesone = flip elem "ivcedsk|r@"
+takestwo = flip elem ".?"
 
 main = do
   args <- getArgs
   handle <- if not$null args then openFile (head args) ReadMode else return stdin
   hSetEncoding handle latin1
-  tree <- fmap Just (build handle) `catchEOF`
+  tree <- fmap Just (hBuild handle) `catchEOF`
           (\_ -> putStrLn "Error: input too short" >> return Nothing)
   case tree of 
     Just t -> run t
