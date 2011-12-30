@@ -24,14 +24,14 @@ data Cont = Exiter | Dcheck Term Cont |
 catchEOF = catchJust (guard.isEOFError)
 
 maybeChar :: IO (Maybe Char)
-maybeChar = (getChar >>= return.Just) `catchEOF` (\_ -> return Nothing)
+maybeChar = fmap Just getChar `catchEOF` (\_ -> return Nothing)
 
 app :: Term -> Term -> Cont -> EvalState (Cont, Term)
 app I a c = return (c,a)
 app K a c = return (c,K2 a)
 app (K2 a) _ c = return (c,a)
 app S a c = return (c,S2 a)
-app (S2 a) a2 c = return (c,(S3 a a2))
+app (S2 a) a2 c = return (c,S3 a a2)
 app (S3 a a2) a3 c = descend c (App (App a a3) (App a2 a3))
 app V _ c = return (c,V)
 app E a c = liftIO $ exitWith (if a == I then ExitSuccess else ExitFailure 1)
@@ -45,7 +45,7 @@ app (Printchar char) a c = do
   return (c,a)
 app (Compchar char) a c = do
   cchar <- get
-  let eq = maybe False id ((==) <$> cchar <*> Just char)
+  let eq = fromMaybe False ((==) <$> cchar <*> Just char)
   descend c (App a (if eq then  I else V))
 app Reprint a c = do
   cchar <- get
@@ -81,14 +81,11 @@ build h = do
             left <- build h
             right <- build h
             return $ App left right
-    _ -> if takesone c
-         then return $ buildone c
-         else if takestwo c
-              then do 
-                arg <- hGetChar h
-                return $ buildtwo c arg
-              else
-                  build h
+    _ | takesone c -> return $ buildone c
+      | takestwo c ->  do
+            arg <- hGetChar h
+            return $ buildtwo c arg
+      | otherwise -> build h
       where
         buildone 'i' = I
         buildone 'v' = V
@@ -107,9 +104,9 @@ build h = do
 
 main = do
   args <- getArgs
-  handle <- if length args /= 0 then openFile (args!!0) ReadMode else return stdin
+  handle <- if not$null args then openFile (head args) ReadMode else return stdin
   hSetEncoding handle latin1
-  tree <- (build handle >>= return. Just) `catchEOF`
+  tree <- fmap Just (build handle) `catchEOF`
           (\_ -> putStrLn "Error: input too short" >> return Nothing)
   case tree of 
     (Just t) -> run t >> return ()
