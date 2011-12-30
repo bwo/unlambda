@@ -21,8 +21,10 @@ data Cont = Exiter | Dcheck Term Cont |
           D_delayed Term Cont | D_undelayed Term Cont
               deriving (Eq, Show)
 
+catchEOF = catchJust (guard.isEOFError)
+
 maybeChar :: IO (Maybe Char)
-maybeChar = catchJust (guard.isEOFError) (getChar >>= return.Just) (\_ -> return Nothing)
+maybeChar = (getChar >>= return.Just) `catchEOF` (\_ -> return Nothing)
 
 app :: Term -> Term -> Cont -> EvalState (Cont, Term)
 app I a c = return (c,a)
@@ -107,7 +109,7 @@ main = do
   args <- getArgs
   handle <- if length args /= 0 then openFile (args!!0) ReadMode else return stdin
   hSetEncoding handle latin1
-  tree <- catchJust (guard.isEOFError) (build handle >>= return. Just) 
+  tree <- (build handle >>= return. Just) `catchEOF`
           (\_ -> putStrLn "Error: input too short" >> return Nothing)
   case tree of 
     (Just t) -> run t >> return ()
