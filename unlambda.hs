@@ -4,8 +4,10 @@ import Control.Monad
 import Control.Applicative
 import Data.Maybe
 import Control.Monad.State
-import Control.Exception (catchJust)
+import Control.Exception (catchJust, throwIO)
+import GHC.IO.Exception
 import System.IO.Error
+import Control.Monad.MaybeT
 
 type EvalState = StateT (Maybe Char) IO
 
@@ -20,8 +22,9 @@ data Cont = Exiter | Dcheck Term Cont | D_delayed Term Cont
 
 catchEOF = catchJust (guard.isEOFError)
 
-maybeChar :: IO (Maybe Char)
-maybeChar = fmap Just getChar `catchEOF` (\_ -> return Nothing)
+hMaybeChar :: Handle -> IO (Maybe Char)
+hMaybeChar h = fmap Just (hGetChar h) `catchEOF` (\_ -> return Nothing)
+maybeChar = hMaybeChar stdin
 
 app :: Term -> Term -> Cont -> EvalState (Cont, Term)
 app I a c = return (c,a)
@@ -69,54 +72,53 @@ run tree = run' start Nothing
       e' = uncurry eval
       run' start state = runStateT start state >>= \(r,n) -> run' (e' r) n
 
-hBuild :: Handle -> IO Term
-hBuild h = do 
-  c <- hGetChar h
-  case c of 
-    '#' -> hGetLine h >> hBuild h
-    '`' -> do
-            left <- hBuild h
-            right <- hBuild h
+buildM :: (Monad m) => m (Maybe Char) -> m (Maybe Term)
+buildM charaction = runMaybeT go
+    where
+      action = MaybeT charaction
+      go = do
+        c <- action
+        case c of
+          '`' -> do
+            left <- go
+            right <- go
             return $ App left right
-    _ | takesone c -> return $ buildone c
-      | takestwo c ->  do
-            arg <- hGetChar h
-            return $ buildtwo c arg
-      | otherwise -> hBuild h
+          '#' -> line
+              where line = action >>= (\n -> if n == '\n' then go else line)
+          _ | takesone c -> return $ buildone c
+            | takestwo c -> fmap (buildtwo c) action
+            | otherwise -> go
+      buildone 'i' = I
+      buildone 'v' = V
+      buildone 'c' = C
+      buildone 'e' = E
+      buildone 'd' = D
+      buildone 's' = S
+      buildone 'k' = K
+      buildone '|' = Reprint
+      buildone 'r' = Printchar '\n'
+      buildone '@' = Readchar
+      buildtwo '.' c = Printchar c
+      buildtwo '?' c = Compchar c
+      takesone = flip elem "ivcedsk|r@"
+      takestwo = flip elem ".?"
+
+
+hBuild :: Handle -> IO Term
+hBuild h = do
+  mt <- buildM (hMaybeChar h)
+  case mt of
+    Nothing -> throwIO $ IOError Nothing EOF "" "" Nothing Nothing
+    Just t -> return t
 
 build :: String -> Maybe Term
-build = maybe Nothing (Just . fst) . build'
+build s = evalState (buildM listgetchar) s
     where
-      build' :: String -> Maybe (Term, String)
-      build' [] = Nothing
-      build' (c:cs)
-          | c == '`' = do
-              (left, cs') <- build' cs
-              (right, rest) <- build' cs'
-              return ((App left right), rest)
-          | c == '#' = case snd $ break (=='\n') cs of
-                         "" -> Nothing
-                         rst -> build' $ tail rst
-          | takesone c = Just (buildone c, cs)
-          | takestwo c = case cs of
-                           (arg:rest) -> Just (buildtwo c arg, rest)
-                           [] -> Nothing
-          | otherwise = build' cs
-
-buildone 'i' = I
-buildone 'v' = V
-buildone 'c' = C
-buildone 'e' = E
-buildone 'd' = D
-buildone 's' = S
-buildone 'k' = K
-buildone '|' = Reprint
-buildone 'r' = Printchar '\n'
-buildone '@' = Readchar
-buildtwo '.' c = Printchar c
-buildtwo '?' c = Compchar c
-takesone = flip elem "ivcedsk|r@"
-takestwo = flip elem ".?"
+      listgetchar = do
+        st <- get
+        case st of
+          [] -> return Nothing
+          (c:cs) -> put cs >> return (Just c)
 
 main = do
   args <- getArgs
@@ -124,6 +126,4 @@ main = do
   hSetEncoding handle latin1
   tree <- fmap Just (hBuild handle) `catchEOF`
           (\_ -> putStrLn "Error: input too short" >> return Nothing)
-  case tree of 
-    Just t -> run t
-    Nothing -> return ()
+  maybe (return ()) run tree
