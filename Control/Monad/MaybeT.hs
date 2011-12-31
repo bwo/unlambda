@@ -2,6 +2,7 @@ module Control.Monad.MaybeT (MaybeT(..)) where
 import Data.Maybe
 import Data.Functor
 import Control.Monad
+import Control.Applicative
 import Control.Monad.Trans
 
 
@@ -21,3 +22,7 @@ instance (Monad m) => Functor (MaybeT m) where
                       case r of
                         Nothing -> return Nothing
                         Just x -> return $ Just (f x)
+
+instance (Monad m) => Applicative (MaybeT m) where
+    pure f = MaybeT $ return (Just f)
+    m <*> o = m >>= \f -> o >>= \obj -> return $ f obj
