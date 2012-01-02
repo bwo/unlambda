@@ -9,6 +9,7 @@ import GHC.IO.Exception
 import System.IO.Error
 import Control.Monad.MaybeT
 
+infixl 3 ¢
 type EvalState = StateT (Maybe Char) IO
 
 data Term = I | K | K2 Term | S | S2 Term | S3 Term Term | V | E 
@@ -80,16 +81,13 @@ buildM charaction = runMaybeT go
           '`' -> App <$> go <*> go
           '#' -> line
               where line = action >>= (\n -> if n == '\n' then go else line)
-          _ | takesone c -> return $ fromJust (lookup c one)
-            | takestwo c -> fmap (fromJust $ lookup c two) action
-            | otherwise -> go
+          _ -> lookup c one ¢ return <?> (lookup c two ¢ (`fmap` action) <?> go)
       one = [('i', I), ('v',V), ('c',C), ('e', E), ('d', D), ('s',S), ('k',K),
              ('r', Printchar '\n'), ('@',Readchar), ('|',Reprint)]
       two = [('.', Printchar), ('?',Compchar)]
-      keyinassoclist = flip elem . map fst
-      takesone = keyinassoclist one
-      takestwo = keyinassoclist two
 
+(¢) = flip ($)
+(<?>) = flip maybe
 
 hBuild :: Handle -> IO Term
 hBuild h = buildM (hMaybeChar h) >>= maybe (throwIO eofError) return
