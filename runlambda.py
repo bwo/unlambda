@@ -1,4 +1,5 @@
-import os, sys
+import sys
+import os
 
 class Currentchar:
     def __init__(self):
@@ -44,7 +45,7 @@ class V(Op):
 class E(Op):
     def app(self, a, c):
         raise SystemExit(not isinstance(a, I))
-        return (c, a)
+#        return (c, a)
 class D(Op):
     def app(self, a, c):
         assert False, "This never happens"        
@@ -182,12 +183,15 @@ class D_undelayed(Eval):
 def run(argv):
     if len(argv) == 1: fileno = 0
     else: fileno = os.open(argv[1], os.O_RDONLY, 0777)
-    tree = bt(fileno)
+    try:
+        tree = bt(fileno)
+    except EOFError:
+        os.write(2, "Input too short!")
+        return 1
     k, a = descend(Exiter(), tree)
     while not isinstance(k, Exiter):
         k, a = k.evaluate(a)
-    if isinstance(a, I): return 0
-    return 1
+    return int(a != i)
 
 def target(*a):
     return (run, None)
