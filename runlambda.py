@@ -186,7 +186,7 @@ def run(argv):
     try:
         tree = bt(fileno)
     except EOFError:
-        os.write(2, "Input too short!")
+        os.write(2, "Input too short!\n")
         return 1
     k, a = descend(Exiter(), tree)
     while not isinstance(k, Exiter):
