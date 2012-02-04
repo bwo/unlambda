@@ -103,7 +103,6 @@ buildM charaction = runMaybeT go
       takesone = flip elem "ivcedsk|r@"
       takestwo = flip elem ".?"
 
-
 hBuild :: Handle -> IO Term
 hBuild h = do
   mt <- buildM (hMaybeChar h)
@@ -126,4 +125,5 @@ main = do
   hSetEncoding handle latin1
   tree <- fmap Just (hBuild handle) `catchEOF`
           (\_ -> putStrLn "Error: input too short" >> return Nothing)
+  when (handle /= stdin) $ hClose handle
   maybe (return ()) run tree
