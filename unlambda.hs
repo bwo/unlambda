@@ -9,6 +9,7 @@ import GHC.IO.Exception
 import System.IO.Error
 import Control.Monad.MaybeT
 
+infixl 3 ¢
 type EvalState = StateT (Maybe Char) IO
 
 data Term = I | K | K2 Term | S | S2 Term | S3 Term Term | V | E 
@@ -21,7 +22,7 @@ data Cont = Exiter | Dcheck Term Cont | D_delayed Term Cont
               deriving (Eq, Show)
 
 catchEOF = catchJust (guard.isEOFError)
-
+eofError = IOError Nothing EOF "" "" Nothing Nothing
 hMaybeChar :: Handle -> IO (Maybe Char)
 hMaybeChar h = fmap Just (hGetChar h) `catchEOF` (\_ -> return Nothing)
 maybeChar = hMaybeChar stdin
@@ -45,9 +46,7 @@ app (Compchar char) a c = do
   cchar <- get
   let eq = fromMaybe False ((==) <$> cchar <*> Just char)
   descend c (App a (if eq then  I else V))
-app Reprint a c = do
-  cchar <- get
-  descend c (App a $ maybe V Printchar cchar)
+app Reprint a c = get >>= descend c . App a . maybe V Printchar
 app C a c = descend c (App a $ Callcc c)
 app (Callcc cont) a _ = return (cont, a)
 -- These things are never actually applied:
@@ -79,39 +78,22 @@ buildM charaction = runMaybeT go
       go = do
         c <- action
         case c of
-          '`' -> do
-            left <- go
-            right <- go
-            return $ App left right
+          '`' -> App <$> go <*> go
           '#' -> line
               where line = action >>= (\n -> if n == '\n' then go else line)
-          _ | takesone c -> return $ buildone c
-            | takestwo c -> fmap (buildtwo c) action
-            | otherwise -> go
-      buildone 'i' = I
-      buildone 'v' = V
-      buildone 'c' = C
-      buildone 'e' = E
-      buildone 'd' = D
-      buildone 's' = S
-      buildone 'k' = K
-      buildone '|' = Reprint
-      buildone 'r' = Printchar '\n'
-      buildone '@' = Readchar
-      buildtwo '.' c = Printchar c
-      buildtwo '?' c = Compchar c
-      takesone = flip elem "ivcedsk|r@"
-      takestwo = flip elem ".?"
+          _ -> lookup c one ¢ return <?> (lookup c two ¢ (`fmap` action) <?> go)
+      one = [('i', I), ('v',V), ('c',C), ('e', E), ('d', D), ('s',S), ('k',K),
+             ('r', Printchar '\n'), ('@',Readchar), ('|',Reprint)]
+      two = [('.', Printchar), ('?',Compchar)]
+
+(¢) = flip ($)
+(<?>) = flip maybe
 
 hBuild :: Handle -> IO Term
-hBuild h = do
-  mt <- buildM (hMaybeChar h)
-  case mt of
-    Nothing -> throwIO $ IOError Nothing EOF "" "" Nothing Nothing
-    Just t -> return t
+hBuild h = buildM (hMaybeChar h) >>= maybe (throwIO eofError) return
 
 build :: String -> Maybe Term
-build s = evalState (buildM listgetchar) s
+build = evalState (buildM listgetchar)
     where
       listgetchar = do
         st <- get
