@@ -86,7 +86,7 @@ class Callcc(Op):
         self.cont = cont
     def app(self, a, _):
         return (self.cont, a)
-
+tick = Tick()
 i = I()
 v = V()
 def get_pchar(c):
@@ -127,13 +127,13 @@ def bt(fileno):
             if not arg: raise EOFError
             stack.append(takesarg[cur](arg))
         elif cur == '`':
-            stack.append(Tick())
+            stack.append(tick)
             ticks += 1
         else:
             tot -= 1
     while stack:
         item = stack.pop()
-        if isinstance(item, Tick):
+        if item is tick:
             left = tree.pop()
             right = tree.pop()
             tree.append(App(left, right))
