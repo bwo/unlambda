@@ -10,6 +10,7 @@ import System.IO.Error
 import Control.Monad.MaybeT
 
 infixl 3 ¢
+infixl 4 $>
 type EvalState = StateT (Maybe Char) IO
 
 data Term = I | K | K2 Term | S | S2 Term | S3 Term Term | V | E 
@@ -26,6 +27,9 @@ eofError = IOError Nothing EOF "" "" Nothing Nothing
 hMaybeChar :: Handle -> IO (Maybe Char)
 hMaybeChar h = fmap Just (hGetChar h) `catchEOF` (\_ -> return Nothing)
 maybeChar = hMaybeChar stdin
+
+($>) :: Applicative f => f (a -> b) -> a -> f b
+f $> a = f <*> (pure a)
 
 app :: Term -> Term -> Cont -> EvalState (Cont, Term)
 app I a c = return (c,a)
@@ -44,7 +48,7 @@ app Readchar a c = do
 app (Printchar char) a c = liftIO (putChar char) >> return (c,a)
 app (Compchar char) a c = do
   cchar <- get
-  let eq = fromMaybe False ((==) <$> cchar <*> Just char)
+  let eq = fromMaybe False ((==) <$> cchar $> char)
   descend c (App a (if eq then  I else V))
 app Reprint a c = get >>= descend c . App a . maybe V Printchar
 app C a c = descend c (App a $ Callcc c)
