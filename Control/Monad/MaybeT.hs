@@ -9,19 +9,11 @@ import Control.Monad.Trans
 data (Monad m) => MaybeT m a = MaybeT {runMaybeT :: m (Maybe a)}
 
 instance (Monad m) => Monad (MaybeT m) where
-    MaybeT m >>= f = MaybeT $ do
-                   r <- m
-                   case r of 
-                     Nothing -> return Nothing
-                     Just x -> runMaybeT $ f x
+    MaybeT m >>= f = MaybeT $ m >>= maybe (return Nothing) (runMaybeT . f)
     return a = MaybeT $ return $ Just a
 
 instance (Monad m) => Functor (MaybeT m) where
-    fmap f (MaybeT m) = MaybeT $ do
-                      r <- m
-                      case r of
-                        Nothing -> return Nothing
-                        Just x -> return $ Just (f x)
+    fmap f (MaybeT m) = MaybeT $ m >>= return . maybe Nothing (Just . f)
 
 instance (Monad m) => Applicative (MaybeT m) where
     pure f = MaybeT $ return (Just f)
