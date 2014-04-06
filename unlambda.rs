@@ -1,5 +1,6 @@
 
 use std::rc::Rc;
+use std::io::File;
 
 #[deriving(Clone)]
 enum Term {I, K, K2(Rc<Term>), S, S2(Rc<Term>), S3(Rc<Term>, Rc<Term>), V, E, Readchar, Printchar(char),
@@ -34,7 +35,7 @@ fn descend<B: std::io::Buffer>(k: Rc<Cont>, t: Rc<Term>, c: Option<char>, b: & m
 fn apply<B: std::io::Buffer>(s: Rc<Term>, t: Rc<Term>, k: Rc<Cont>, c: Option<char>, b: &mut B) -> Result<(Rc<Term>, Rc<Cont>, Option<char>), int>
 {
     match *s {
-        I => {println!("I"); Ok((t, k, c))},
+        I => Ok((t, k, c)),
         K => Ok((Rc::new(K2(t)), k, c)),
         K2(ref a) => Ok((a.clone(), k, c)),
         S => Ok((Rc::new(S2(t)), k, c)),
@@ -138,9 +139,16 @@ fn run<B: std::io::Buffer>(t : Term, b: &mut B) -> int
 }
 
 fn main() {
-    // todo: read from file.
+    let args = std::os::args();
     let mut stdin = std::io::stdin();
-    std::os::set_exit_status(match build(&mut stdin) {
+    let res = match args.get(1) {
+        None => build(& mut stdin),
+        Some(s) => match File::open(&Path::new(s.clone())) {
+            Ok(h) => build(& mut std::io::BufferedReader::new(h)),
+            Err(_) => build(& mut stdin)
+        }
+    };
+    std::os::set_exit_status(match res {
         Err(e) => {println!("{}",e); 1 },
         Ok(r) => run(r, &mut stdin) 
     });
