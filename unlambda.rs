@@ -1,3 +1,4 @@
+
 use std::rc::Rc;
 
 #[deriving(Clone)]
@@ -9,45 +10,45 @@ enum Term {I, K, K2(Rc<Term>), S, S2(Rc<Term>), S3(Rc<Term>, Rc<Term>), V, E, Re
 enum Cont {Exit, DCheck(Rc<Term>, Rc<Cont>), DDelayed(Rc<Term>, Rc<Cont>), DUndelayed(Rc<Term>, Rc<Cont>)
 }
 
-fn eval(k: Rc<Cont>, t: Rc<Term>, c: Option<char>) -> Result<(Rc<Term>, Rc<Cont>, Option<char>), int>
+fn eval<B: std::io::Buffer>(k: Rc<Cont>, t: Rc<Term>, c: Option<char>, b: & mut B) -> Result<(Rc<Term>, Rc<Cont>, Option<char>), int>
 {
     match *k {
         Exit => Err(0),
-        DDelayed(ref right, ref cont) => apply(t, right.clone(), cont.clone(), c),
-        DUndelayed(ref left, ref cont) => apply(left.clone(), t, cont.clone(), c),
+        DDelayed(ref right, ref cont) => apply(t, right.clone(), cont.clone(), c, b),
+        DUndelayed(ref left, ref cont) => apply(left.clone(), t, cont.clone(), c, b),
         DCheck(ref right, ref cont) => match *t {
-            D => eval(cont.clone(), Rc::new(D2(right.clone())), c),
-            ref x => descend(Rc::new(DUndelayed(Rc::new(x.clone()), cont.clone())), right.clone(), c)
+            D => eval(cont.clone(), Rc::new(D2(right.clone())), c, b),
+            ref x => descend(Rc::new(DUndelayed(Rc::new(x.clone()), cont.clone())), right.clone(), c, b)
         }
     }
 }
 
-fn descend(k: Rc<Cont>, t: Rc<Term>, c: Option<char>) -> Result<(Rc<Term>, Rc<Cont>, Option<char>), int>
+fn descend<B: std::io::Buffer>(k: Rc<Cont>, t: Rc<Term>, c: Option<char>, b: & mut B) -> Result<(Rc<Term>, Rc<Cont>, Option<char>), int>
 {
     match *t {
-        App(ref left,ref right) => descend(Rc::new(DCheck(right.clone(), k)), left.clone(), c),
-        _ => eval(k, t.clone(), c)
+        App(ref left,ref right) => descend(Rc::new(DCheck(right.clone(), k)), left.clone(), c, b),
+        _ => eval(k, t.clone(), c, b)
     }
 }
 
-fn apply(s: Rc<Term>, t: Rc<Term>, k: Rc<Cont>, c: Option<char>) -> Result<(Rc<Term>, Rc<Cont>, Option<char>), int>
+fn apply<B: std::io::Buffer>(s: Rc<Term>, t: Rc<Term>, k: Rc<Cont>, c: Option<char>, b: &mut B) -> Result<(Rc<Term>, Rc<Cont>, Option<char>), int>
 {
     match *s {
-        I => Ok((t, k, c)),
+        I => {println!("I"); Ok((t, k, c))},
         K => Ok((Rc::new(K2(t)), k, c)),
         K2(ref a) => Ok((a.clone(), k, c)),
         S => Ok((Rc::new(S2(t)), k, c)),
         S2(ref a) => Ok((Rc::new(S3(a.clone(), t)), k, c)),
-        S3(ref a,ref a2) => descend(k, Rc::new(App(Rc::new(App(a.clone(),t.clone())), Rc::new(App(a2.clone(),t)))), c),
+        S3(ref a,ref a2) => descend(k, Rc::new(App(Rc::new(App(a.clone(),t.clone())), Rc::new(App(a2.clone(),t)))), c, b),
         V => Ok((Rc::new(V),k,c)),
         E => match *t {
             I => Err(0),
             _ => Err(1)
         },
-        D2(ref right) => descend(Rc::new(DDelayed(t, k)), right.clone(), c),
-        Readchar => match std::io::stdin().read_char() {
-            Ok(c) => descend(k, Rc::new(App(t, Rc::new(I))), Some(c)),
-            _     => descend(k, Rc::new(App(t, Rc::new(V))), None)
+        D2(ref right) => descend(Rc::new(DDelayed(t, k)), right.clone(), c, b),
+        Readchar => match b.read_char() {
+            Ok(c) => { println!("read {:c}", c); descend(k, Rc::new(App(t, Rc::new(I))), Some(c), b) },
+            _     => descend(k, Rc::new(App(t, Rc::new(V))), None, b)
         },
         Printchar(ch) => {
             print!("{:c}",ch);
@@ -55,10 +56,10 @@ fn apply(s: Rc<Term>, t: Rc<Term>, k: Rc<Cont>, c: Option<char>) -> Result<(Rc<T
         },
         Compchar(ch) => {
             let eq = c.map_or(false, |c| { ch == c });
-            descend(k, Rc::new(App(t, Rc::new((if eq { I } else { V })))), c)
+            descend(k, Rc::new(App(t, Rc::new((if eq { I } else { V })))), c, b)
         },
-        Reprint => descend(k, Rc::new(App(t, Rc::new(c.map_or(V, Printchar)))), c),
-        C => descend(k.clone(), Rc::new(App(t, Rc::new(Callcc(k)))), c),
+        Reprint => descend(k, Rc::new(App(t, Rc::new(c.map_or(V, Printchar)))), c, b),
+        C => descend(k.clone(), Rc::new(App(t, Rc::new(Callcc(k)))), c, b),
         Callcc(ref cont) => Ok((t, cont.clone(), c)),
         // D and App should never happen here.
         _ => Err(-1)
@@ -118,9 +119,9 @@ fn build<B: std::io::Buffer>(reader: &mut B) -> Result<Term, std::io::IoError> {
     Ok(match tree.pop() { Some(s) => s , None => unreachable!() })
 }
 
-fn run(t : Term) -> int
+fn run<B: std::io::Buffer>(t : Term, b: &mut B) -> int
 {
-    let mut start = descend(Rc::new(Exit), Rc::new(t), None);
+    let mut start = descend(Rc::new(Exit), Rc::new(t), None, b);
     let mut exitcode;
     loop {
         match start {
@@ -129,7 +130,7 @@ fn run(t : Term) -> int
                 break;
             },
             Ok((term, cont, c)) => {
-                start = eval(cont, term, c)
+                start = eval(cont, term, c, b)
             }
         }
     }
@@ -137,8 +138,10 @@ fn run(t : Term) -> int
 }
 
 fn main() {
-    match build(&mut std::io::stdin()) {
-        Err(e) => (),
-        Ok(r) => println!("{}", run(r))
-    };
+    // todo: read from file.
+    let mut stdin = std::io::stdin();
+    std::os::set_exit_status(match build(&mut stdin) {
+        Err(e) => {println!("{}",e); 1 },
+        Ok(r) => run(r, &mut stdin) 
+    });
 }
