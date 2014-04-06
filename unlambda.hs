@@ -1,5 +1,6 @@
 import System.IO
-import System
+import System.Exit
+import System.Environment
 import Control.Monad
 import Control.Applicative
 import Data.Maybe
