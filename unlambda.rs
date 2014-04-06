@@ -48,7 +48,7 @@ fn apply<B: std::io::Buffer>(s: Rc<Term>, t: Rc<Term>, k: Rc<Cont>, c: Option<ch
         },
         D2(ref right) => descend(Rc::new(DDelayed(t, k)), right.clone(), c, b),
         Readchar => match b.read_char() {
-            Ok(c) => { println!("read {:c}", c); descend(k, Rc::new(App(t, Rc::new(I))), Some(c), b) },
+            Ok(c) => descend(k, Rc::new(App(t, Rc::new(I))), Some(c), b),
             _     => descend(k, Rc::new(App(t, Rc::new(V))), None, b)
         },
         Printchar(ch) => {
