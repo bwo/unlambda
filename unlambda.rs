@@ -81,6 +81,10 @@ enum TermOrApp {
     T(Term), A
 }
 
+fn getch<B: std::io::Buffer>(reader: &mut B) -> Result<char, std::io::IoError> {
+    Ok(std::char::from_u32(try!(reader.read_byte()) as u32).unwrap())
+}
+
 fn build<B: std::io::Buffer>(reader: &mut B) -> Result<Term, std::io::IoError> {
     let mut tot = 0;
     let mut ticks = 0;
@@ -88,14 +92,14 @@ fn build<B: std::io::Buffer>(reader: &mut B) -> Result<Term, std::io::IoError> {
     let mut tree = std::vec::Vec::new();
     let mut cur;
     while tot != 2*ticks + 1 {
-        cur = try!(reader.read_char());
+        cur = try!(getch(reader));
         tot = tot + 1;
         match (cur,noarg(cur)) {
             ('#',None) => { try!(reader.read_line()); tot = tot - 1;},
             ('`', None) => { ticks = ticks + 1; stack.push(A) },
             (_,Some(t)) => stack.push(T(t)),
-            ('.',_) => stack.push(T(Printchar(try!(reader.read_char())))),
-            ('?',_) => stack.push(T(Compchar(try!(reader.read_char())))),
+            ('.',_) => stack.push(T(Printchar(try!(getch(reader))))),
+            ('?',_) => stack.push(T(Compchar(try!(getch(reader))))),
             _ => tot = tot - 1
         }
     };
@@ -149,7 +153,10 @@ fn main() {
         }
     };
     std::os::set_exit_status(match res {
-        Err(e) => {println!("{}",e); 1 },
+        Err(e) => {
+            println!("{}",e); 
+            1
+        },
         Ok(r) => run(r, &mut stdin) 
     });
 }
