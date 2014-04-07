@@ -97,22 +97,17 @@ fn build<B: std::io::Buffer>(reader: &mut B, m: HashMap<char, Rc<Term>>) -> Resu
     };
     let mut curterm;
     while !stack.is_empty() {
-        curterm = match stack.pop() { Some(s) => s, None => unreachable!() };
+        curterm = stack.pop().unwrap();
         match curterm {
             A => {
-                let left = match tree.pop() {
-                    Some(l) => l,
-                    None => unreachable!()
-                };
-                let right = match tree.pop() {
-                    Some(r) => r,
-                    None => unreachable!()
-                };
+                let left = tree.pop().unwrap();
+                let right = tree.pop().unwrap();
                 tree.push(Rc::new(App(left,right)))
             }
             T(t) => tree.push(t)
         }
     }
+    // can't replace this with tree.pop().unwrap(); type can't be determined!
     Ok(match tree.pop() { Some(s) => s , None => unreachable!() })
 }
 
