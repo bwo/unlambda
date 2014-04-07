@@ -1,4 +1,6 @@
-
+#![feature(macro_rules)]
+extern crate collections;
+use collections::hashmap::{HashMap};
 use std::rc::Rc;
 use std::io::File;
 
@@ -67,25 +69,15 @@ fn apply<B: std::io::Buffer>(s: Rc<Term>, t: Rc<Term>, k: Rc<Cont>, c: Option<ch
     }
 }
 
-fn noarg(ch: char) -> Option<Term> {
-    match ch {
-        '|' => Some(Reprint), 's'|'S' => Some(S), 'i'|'I' => Some(I),
-        'k'|'K' => Some(K), 'c'|'C' => Some(C), 'e'|'E' => Some(E),
-        'v'|'V' => Some(V), 'r'|'R' => Some(Printchar('\n')),
-        'd'|'D' => Some(D), '@' => Some(Readchar),
-        _ => None
-    }
-}
-
 enum TermOrApp {
-    T(Term), A
+    T(Rc<Term>), A
 }
 
 fn getch<B: std::io::Buffer>(reader: &mut B) -> Result<char, std::io::IoError> {
     Ok(std::char::from_u32(try!(reader.read_byte()) as u32).unwrap())
 }
 
-fn build<B: std::io::Buffer>(reader: &mut B) -> Result<Term, std::io::IoError> {
+fn build<B: std::io::Buffer>(reader: &mut B, m: HashMap<char, Rc<Term>>) -> Result<Rc<Term>, std::io::IoError> {
     let mut tot = 0;
     let mut ticks = 0;
     let mut stack = std::vec::Vec::new();
@@ -94,12 +86,12 @@ fn build<B: std::io::Buffer>(reader: &mut B) -> Result<Term, std::io::IoError> {
     while tot != 2*ticks + 1 {
         cur = try!(getch(reader));
         tot = tot + 1;
-        match (cur,noarg(cur)) {
+        match (cur, m.find(&cur).map(|t| t.clone() )) {
             ('#',None) => { try!(reader.read_line()); tot = tot - 1;},
             ('`', None) => { ticks = ticks + 1; stack.push(A) },
             (_,Some(t)) => stack.push(T(t)),
-            ('.',_) => stack.push(T(Printchar(try!(getch(reader))))),
-            ('?',_) => stack.push(T(Compchar(try!(getch(reader))))),
+            ('.',_) => stack.push(T(Rc::new(Printchar(try!(getch(reader)))))),
+            ('?',_) => stack.push(T(Rc::new(Compchar(try!(getch(reader)))))),
             _ => tot = tot - 1
         }
     };
@@ -116,7 +108,7 @@ fn build<B: std::io::Buffer>(reader: &mut B) -> Result<Term, std::io::IoError> {
                     Some(r) => r,
                     None => unreachable!()
                 };
-                tree.push(App(Rc::new(left),Rc::new(right)))
+                tree.push(Rc::new(App(left,right)))
             }
             T(t) => tree.push(t)
         }
@@ -124,9 +116,9 @@ fn build<B: std::io::Buffer>(reader: &mut B) -> Result<Term, std::io::IoError> {
     Ok(match tree.pop() { Some(s) => s , None => unreachable!() })
 }
 
-fn run<B: std::io::Buffer>(t : Term, b: &mut B) -> int
+fn run<B: std::io::Buffer>(t : Rc<Term>, b: &mut B) -> int
 {
-    let mut start = descend(Rc::new(Exit), Rc::new(t), None, b);
+    let mut start = descend(Rc::new(Exit), t, None, b);
     let mut exitcode;
     loop {
         match start {
@@ -142,14 +134,33 @@ fn run<B: std::io::Buffer>(t : Term, b: &mut B) -> int
     exitcode
 }
 
+
+macro_rules! hashmap (
+    ($($key:expr => $val:expr),*) => ( {
+        let mut m = HashMap::new();
+        ($(m.insert($key, $val)),*);
+        m
+    })
+)
+
 fn main() {
     let args = std::os::args();
+    let p = hashmap!('i' => Rc::new(I),
+                     'v' => Rc::new(V),
+                     'e' => Rc::new(E),
+                     'k' => Rc::new(K),
+                     's' => Rc::new(S),
+                     '|' => Rc::new(Reprint),
+                     '@' => Rc::new(Readchar),
+                     'c' => Rc::new(C),
+                     'r' => Rc::new(Printchar('\n')),
+                     'd' => Rc::new(D));
     let mut stdin = std::io::stdin();
     let res = match args.get(1) {
-        None => build(& mut stdin),
+        None => build(& mut stdin, p),
         Some(s) => match File::open(&Path::new(s.clone())) {
-            Ok(h) => build(& mut std::io::BufferedReader::new(h)),
-            Err(_) => build(& mut stdin)
+            Ok(h) => build(& mut std::io::BufferedReader::new(h), p),
+            Err(_) => build(& mut stdin, p)
         }
     };
     std::os::set_exit_status(match res {
@@ -158,5 +169,5 @@ fn main() {
             1
         },
         Ok(r) => run(r, &mut stdin) 
-    });
+    }); 
 }
