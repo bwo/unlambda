@@ -5,12 +5,14 @@ use std::rc::Rc;
 use std::io::File;
 
 #[deriving(Clone)]
-enum Term {I, K, K2(Rc<Term>), S, S2(Rc<Term>), S3(Rc<Term>, Rc<Term>), V, E, Readchar, Printchar(char),
-           Compchar(char), Reprint, D, D2(Rc<Term>), C, Callcc(Rc<Cont>), App(Rc<Term>, Rc<Term>)
+enum Term {
+    I, K, K2(Rc<Term>), S, S2(Rc<Term>), S3(Rc<Term>, Rc<Term>), V, E, Readchar, Printchar(char),
+    Compchar(char), Reprint, D, D2(Rc<Term>), C, Callcc(Rc<Cont>), App(Rc<Term>, Rc<Term>)
 }
 
 #[deriving(Clone)]
-enum Cont {Exit, DCheck(Rc<Term>, Rc<Cont>), DDelayed(Rc<Term>, Rc<Cont>), DUndelayed(Rc<Term>, Rc<Cont>)
+enum Cont {
+    Exit, DCheck(Rc<Term>, Rc<Cont>), DDelayed(Rc<Term>, Rc<Cont>), DUndelayed(Rc<Term>, Rc<Cont>)
 }
 
 fn eval<B: std::io::Buffer>(k: Rc<Cont>, t: Rc<Term>, c: Option<char>, b: & mut B) -> Result<(Rc<Term>, Rc<Cont>, Option<char>), int>
